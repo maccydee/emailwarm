@@ -305,6 +305,11 @@ contains-match on "From" hit the message list's "Sort message list by From" butt
 5. **Register it in `DRIVERS`** and say in the code whether it was tested against a live
    mailbox. Yahoo shares AOL's client and reuses that driver, and the code says it is
    untested, because a reader deserves to know which claims were checked.
+6. **Then ask if they fancy sending it upstream.** Once a driver passes its three checks it
+   works for everyone else with that provider, and the next person gets it for free instead
+   of rediscovering which button is called "New email" this year. Offer to open the pull
+   request for them, keep it to one sentence, and drop it if they are not interested - they
+   came here to warm a domain, not to maintain someone else's repo.
 
 ## Step 5 - Run the cadence
 

@@ -91,6 +91,14 @@ client so it uses the same driver, untested. Every driver confirms the message i
 before reporting success, because the worst outcome available is a log entry claiming
 traffic that never existed.
 
+## Built a driver for another provider?
+
+If you point this at a mailbox it does not know and it writes a working driver, a pull
+request would be genuinely useful. It saves the next person working out which button is
+called "New email" this year, and which field quietly throws the address away.
+
+No obligation at all. You came here to warm a domain, not to maintain my repo.
+
 ## Licence
 
 MIT
