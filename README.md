@@ -35,6 +35,8 @@ human-looking behaviour.
 
 ## Quick start
 
+On Windows, use `python` or `py -3` in place of `python3` below. Nothing else changes.
+
 ```bash
 pip install playwright && python3 -m playwright install chromium
 

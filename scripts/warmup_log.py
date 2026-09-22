@@ -53,7 +53,7 @@ def load(path: Path) -> list[dict]:
     if not path.exists():
         return []
     out = []
-    for n, line in enumerate(path.read_text().splitlines(), 1):
+    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
         if not line:
             continue
@@ -124,7 +124,7 @@ def main() -> None:
             "blocked": args.blocked, "notes": args.notes,
         }
         args.log.parent.mkdir(parents=True, exist_ok=True)
-        with args.log.open("a") as fh:
+        with args.log.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
         print(json.dumps(entry, indent=2))
         return

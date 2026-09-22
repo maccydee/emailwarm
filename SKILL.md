@@ -52,6 +52,12 @@ Collect these up front so the run is not stop-start:
   run, and consistency is the thing being built. Ask for a window they are confident about
   rather than a single time, and pick a slot inside it.
 
+**Windows:** use `python` or `py -3` wherever these examples say `python3`, and give the
+scheduled job the full path to `python.exe` - `python` on PATH is often the Microsoft Store
+stub, which opens the Store instead of running anything. Everything else works as written:
+the DNS audit falls back to DNS-over-HTTPS when `dig` is missing, and the browser scripts use
+Windows process tools rather than `pgrep`.
+
 ## Step 2 - Audit the DNS before touching anything
 
 ```

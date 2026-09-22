@@ -480,7 +480,7 @@ def main() -> int:
     if not args.body and not args.body_file:
         ap.error("one of --body or --body-file is required")
     if args.body_file:
-        args.body = args.body_file.read_text().strip()
+        args.body = args.body_file.read_text(encoding="utf-8").strip()
 
     try:
         from playwright.sync_api import sync_playwright

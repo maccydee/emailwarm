@@ -109,19 +109,18 @@ def _alive(pid: str) -> bool:
 def _holding_profile() -> list[str]:
     """Pids of browsers using this profile, on whichever platform we are on."""
     if IS_WINDOWS:
+        # PowerShell rather than wmic: wmic is deprecated and is absent from recent Windows
+        # 11 builds, so a wmic call returns nothing and every lock looks stale.
+        profile = str(PROFILE).replace("'", "''")
+        script = ("Get-CimInstance Win32_Process | "
+                  f"Where-Object {{ $_.CommandLine -like '*user-data-dir={profile}*' }} | "
+                  "ForEach-Object {{ $_.ProcessId }}").replace("{{", "{").replace("}}", "}")
         try:
-            out = subprocess.run(
-                ["wmic", "process", "where", "name like '%chrome%'", "get", "ProcessId,CommandLine"],
-                capture_output=True, text=True, timeout=15).stdout
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                                 capture_output=True, text=True, timeout=20).stdout
         except (OSError, subprocess.TimeoutExpired):
             return []
-        pids = []
-        for line in out.splitlines():
-            if str(PROFILE) in line:
-                parts = line.split()
-                if parts and parts[-1].isdigit():
-                    pids.append(parts[-1])
-        return pids
+        return [ln.strip() for ln in out.splitlines() if ln.strip().isdigit()]
     try:
         out = subprocess.run(["pgrep", "-f", f"user-data-dir={PROFILE}"],
                              capture_output=True, text=True, timeout=10).stdout.split()
@@ -204,7 +203,7 @@ def window_size() -> tuple[int, int]:
 def load_state() -> dict:
     if STATE.exists():
         try:
-            return json.loads(STATE.read_text())
+            return json.loads(STATE.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             pass
     return {}
@@ -212,7 +211,7 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(state, indent=2))
+    STATE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 INSTALL_HINT = (
