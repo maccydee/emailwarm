@@ -1,10 +1,10 @@
-# emailwarm
+# emailwarm — email warmup for a new sending domain
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Claude Skill](https://img.shields.io/badge/Claude-skill-8A5CF6.svg)](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)
 
-A Claude skill that warms a new email sending domain, hands-on. It audits the domain's
+A Claude skill that does **email warmup** on a new sending domain, hands-on. It audits the domain's
 SPF, DKIM and DMARC, helps fix the records where they actually live, sets up the mailboxes,
 and then sends and replies on a daily cadence until the domain has a sending history.
 
