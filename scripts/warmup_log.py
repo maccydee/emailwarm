@@ -136,6 +136,19 @@ def main() -> None:
             blocked_tail += 1
         else:
             break
+    # Gaps matter more than totals here: the ramp is a shape, and a machine that was off for
+    # three days leaves a hole nobody notices from a run count alone.
+    gap_days, last_date = None, ""
+    dated = [e.get("date") for e in entries if e.get("date")]
+    if dated:
+        from datetime import date as _date
+        try:
+            last_date = max(dated)
+            y, m, d = (int(x) for x in last_date.split("-"))
+            gap_days = (_date.today() - _date(y, m, d)).days
+        except ValueError:
+            gap_days = None
+
     mix = placement_mix(entries, args.provider)
     stop_fired = len(sending) >= STOP_AFTER_RUNS and not any(
         (e.get("measured_to") or "") == "inbox" for e in sending)
@@ -146,6 +159,14 @@ def main() -> None:
         "next_run": run,
         "next_target_sends": target_for(run),
         "runs_needed": MIN_RUNS_BEFORE_GATE,
+        "last_run_date": last_date,
+        "days_since_last_run": gap_days,
+        "gap_warning": (
+            "" if gap_days is None or gap_days <= 3 else
+            f"no run logged for {gap_days} days - if the machine was off, move the schedule "
+            "into hours it is reliably awake. Continue the ramp from the next run rather than "
+            "sending extra to catch up."
+        ),
         "warmup_complete": len(sending) >= MIN_RUNS_BEFORE_GATE,
         "placement": mix,
         # Said this way on purpose: a completed warm-up improves how providers treat the

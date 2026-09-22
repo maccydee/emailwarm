@@ -47,6 +47,10 @@ Collect these up front so the run is not stop-start:
 - **Where the mailbox lives**, if anywhere yet (Google Workspace, Microsoft 365, other).
 - **Warm-up mailboxes they control**, ideally two or more providers. See step 4.
 - **What they eventually want to send**, in messages a day, so the ramp has a target.
+- **When their machine is actually on and awake**, if the cadence will run there. This gets
+  forgotten and it quietly breaks the ramp: a laptop that is shut at 09:00 simply misses the
+  run, and consistency is the thing being built. Ask for a window they are confident about
+  rather than a single time, and pick a slot inside it.
 
 ## Step 2 - Audit the DNS before touching anything
 
@@ -217,6 +221,17 @@ Once the mailboxes verify, offer to schedule the run rather than leaving it to b
 remembered - the whole value of a ramp is that it is consistent. On macOS use a launchd
 agent (weekday mornings), elsewhere cron. Two things worth getting right:
 
+- **Schedule it inside the hours the machine is really on.** Mid-morning and mid-afternoon
+  beat 06:00 on a laptop that gets opened at nine. If they use a desktop that is always on,
+  anything goes; if it is a laptop that travels, expect missed days and say so now rather
+  than treating the first gap as a fault.
+- **On macOS, prefer a launchd agent to cron for this.** A `StartCalendarInterval` job whose
+  time passed while the machine was asleep runs once on wake; a cron job that was asleep at
+  the appointed minute simply never runs. For a warm-up that is the difference between a
+  late run and a missing day.
+- **A missed day is not a reason to double up.** The log carries the run number, so the next
+  run continues the ramp where it left off. Sending twice as much to catch up is the exact
+  shape warming exists to avoid.
 - **Give the job the same profile.** Set `EMAILWARM_PROFILE` in the job's environment if it
   is not the default, or the scheduled run will start from an empty profile and every
   mailbox will look signed out.
