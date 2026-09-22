@@ -78,12 +78,56 @@ MAILBOX_URLS = {
 }
 
 
+IS_WINDOWS = sys.platform.startswith("win")
+
+
 def _alive(pid: str) -> bool:
+    """Is this pid a running process?
+
+    os.kill(pid, 0) is the usual trick and it is NOT safe on Windows: there, os.kill with a
+    signal other than CTRL_C_EVENT/CTRL_BREAK_EVENT calls TerminateProcess, so the liveness
+    probe would kill the very process it is asking about. Windows gets tasklist instead.
+    """
     try:
-        os.kill(int(pid), 0)
-        return True
-    except (OSError, ValueError):
+        pid_i = int(pid)
+    except ValueError:
         return False
+    if IS_WINDOWS:
+        try:
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid_i}", "/NH"],
+                                 capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return True  # cannot tell; assume alive rather than deleting a live lock
+        return str(pid_i) in out
+    try:
+        os.kill(pid_i, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _holding_profile() -> list[str]:
+    """Pids of browsers using this profile, on whichever platform we are on."""
+    if IS_WINDOWS:
+        try:
+            out = subprocess.run(
+                ["wmic", "process", "where", "name like '%chrome%'", "get", "ProcessId,CommandLine"],
+                capture_output=True, text=True, timeout=15).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        pids = []
+        for line in out.splitlines():
+            if str(PROFILE) in line:
+                parts = line.split()
+                if parts and parts[-1].isdigit():
+                    pids.append(parts[-1])
+        return pids
+    try:
+        out = subprocess.run(["pgrep", "-f", f"user-data-dir={PROFILE}"],
+                             capture_output=True, text=True, timeout=10).stdout.split()
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return out
 
 
 def clear_stale_lock() -> None:
@@ -96,11 +140,7 @@ def clear_stale_lock() -> None:
     locks = [PROFILE / n for n in ("SingletonLock", "SingletonCookie", "SingletonSocket")]
     if not any(p.exists() or p.is_symlink() for p in locks):
         return
-    try:
-        out = subprocess.run(["pgrep", "-f", f"user-data-dir={PROFILE}"],
-                             capture_output=True, text=True, timeout=10).stdout.split()
-    except (OSError, subprocess.TimeoutExpired):
-        out = []
+    out = _holding_profile()
     live = []
     for pid in out:
         # Confirm the process is REALLY alive and really ours. A pid pgrep listed a moment
@@ -108,6 +148,9 @@ def clear_stale_lock() -> None:
         # stale lock - after which Chrome hands off to a session that no longer exists and
         # the launch dies with "Opening in existing browser session".
         if not _alive(pid):
+            continue
+        if IS_WINDOWS:
+            live.append(pid)  # already matched on the profile path by _holding_profile
             continue
         try:
             cmd = subprocess.run(["ps", "-p", pid, "-o", "command="],
@@ -134,6 +177,17 @@ def window_size() -> tuple[int, int]:
     sign-in dialogs get clipped and the buttons the user needs sit off-screen. Seeding is
     the one step that is entirely manual, so the window has to behave like a normal browser.
     """
+    if IS_WINDOWS:
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            user32.SetProcessDPIAware()
+            w, h = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+            if w > 400 and h > 400:
+                return max(1100, w - 80), max(700, h - 120)
+        except Exception:  # noqa: BLE001 - fall through to the default size
+            pass
     if sys.platform == "darwin":
         try:
             out = subprocess.run(
@@ -250,9 +304,7 @@ def seed(name: str, url: str) -> int:
                 sys.exit("cannot start a browser.\n" + INSTALL_HINT)
             if "existing browser session" not in str(exc):
                 raise
-            busy = [x for x in subprocess.run(
-                ["pgrep", "-f", f"user-data-dir={PROFILE}"],
-                capture_output=True, text=True).stdout.split() if _alive(x)]
+            busy = [x for x in _holding_profile() if _alive(x)]
             if busy:
                 sys.exit(f"another window is already using this profile (pids {', '.join(busy)}). "
                          "Only one thing can use it at a time - close that window and run this "

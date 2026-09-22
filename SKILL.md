@@ -59,6 +59,11 @@ python3 scripts/dns_check.py <domain>
 python3 scripts/dns_check.py <domain> --selector <from the provider console>
 ```
 
+It uses `dig` where that exists and DNS-over-HTTPS where it does not, so Windows needs
+nothing installed. If no resolver answers at all it says so and exits non-zero rather than
+printing a report full of MISSING, which would read as a badly configured domain when the
+real problem is the machine.
+
 It reports SPF, DKIM, DMARC and MX, names the mail provider, and separates what must be
 fixed from what is worth changing. Run it first so you arrive at the registrar knowing
 exactly which records are wrong, and again afterwards to prove the edit landed.
@@ -225,10 +230,18 @@ agent (weekday mornings), elsewhere cron. Two things worth getting right:
   beat 06:00 on a laptop that gets opened at nine. If they use a desktop that is always on,
   anything goes; if it is a laptop that travels, expect missed days and say so now rather
   than treating the first gap as a fault.
-- **On macOS, prefer a launchd agent to cron for this.** A `StartCalendarInterval` job whose
-  time passed while the machine was asleep runs once on wake; a cron job that was asleep at
-  the appointed minute simply never runs. For a warm-up that is the difference between a
-  late run and a missing day.
+- **Use the scheduler the machine actually has, and turn on catch-up.** The ramp is a shape,
+  so a run skipped because the machine was off is the thing that breaks it.
+  - **macOS: a launchd agent, not cron.** A `StartCalendarInterval` job whose time passed
+    during sleep runs once on wake; a cron job asleep at the appointed minute never runs.
+  - **Windows: Task Scheduler, not cron.** Create it with `schtasks` or the GUI, and tick
+    **"Run task as soon as possible after a scheduled start is missed"** - without it,
+    Windows behaves like cron and simply drops the run. `schtasks /Create /SC WEEKLY /D
+    MON,TUE,WED,THU,FRI /TN emailwarm /TR "..." /ST 10:00` sets the weekday schedule; the
+    catch-up flag is on the Settings tab, or `/Z /V1` era switches depending on version, so
+    confirm it in the GUI rather than assuming.
+  - **Linux: a systemd timer with `Persistent=true`**, which fires a missed run on next
+    boot. Plain cron has no catch-up.
 - **A missed day is not a reason to double up.** The log carries the run number, so the next
   run continues the ramp where it left off. Sending twice as much to catch up is the exact
   shape warming exists to avoid.
@@ -241,7 +254,8 @@ agent (weekday mornings), elsewhere cron. Two things worth getting right:
   deciding to.
 - **Scheduled jobs get a minimal PATH.** Use absolute paths to python and the scripts. A
   job that cannot find its interpreter fails silently and the ramp stalls for days before
-  anyone looks.
+  anyone looks. On Windows that means the full path to `python.exe`, since `python` on PATH
+  is often the Microsoft Store stub that opens the Store instead of running anything.
 
 ## Which model to run each part on
 

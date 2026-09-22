@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import sys
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Selectors worth probing blind. DKIM has no discovery mechanism, so a missing key here
@@ -29,17 +33,62 @@ MX_PROVIDERS = {
 }
 
 
-def dig(name: str, rtype: str = "TXT") -> list[str]:
+# Windows has no `dig`, and the audit is the first thing this skill runs - so a missing
+# binary took the whole thing down before it could say anything useful. DNS-over-HTTPS needs
+# nothing but urllib, works identically everywhere, and doubles as the fallback when dig is
+# present but the local resolver is lying.
+DOH_ENDPOINTS = ("https://cloudflare-dns.com/dns-query", "https://dns.google/resolve")
+FORCE_DOH = os.environ.get("EMAILWARM_FORCE_DOH") == "1"
+
+
+def _dig_binary(name: str, rtype: str) -> list[str] | None:
+    """Query with the dig binary. None means dig is unavailable, [] means no records."""
+    if FORCE_DOH or shutil.which("dig") is None:
+        return None
     try:
-        out = subprocess.run(["dig", "+short", rtype, name], capture_output=True, text=True, timeout=20)
+        out = subprocess.run(["dig", "+short", rtype, name],
+                             capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.TimeoutExpired):
-        return []
-    vals = []
-    for line in out.stdout.splitlines():
-        line = line.strip()
-        if line:
-            vals.append(line.strip('"').replace('" "', ""))
-    return vals
+        return None
+    if out.returncode == 0:
+        RESOLVER_OK["answered"] = True
+    return [ln.strip().strip('"').replace('" "', "") for ln in out.stdout.splitlines() if ln.strip()]
+
+
+RESOLVER_OK = {"answered": False}
+
+
+def _doh(name: str, rtype: str) -> tuple[list[str], int | None]:
+    """Query over HTTPS. Returns (answers, rcode); rcode 3 is NXDOMAIN."""
+    for base in DOH_ENDPOINTS:
+        url = f"{base}?name={urllib.parse.quote(name)}&type={urllib.parse.quote(rtype)}"
+        req = urllib.request.Request(url, headers={"Accept": "application/dns-json",
+                                                   "User-Agent": "emailwarm/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception:  # noqa: BLE001 - try the next resolver rather than dying
+            continue
+        RESOLVER_OK["answered"] = True
+        answers = []
+        for a in data.get("Answer", []) or []:
+            v = str(a.get("data", "")).strip()
+            if not v:
+                continue
+            # DoH returns TXT already quoted, and long records split into several strings.
+            if v.startswith('"') and v.endswith('"'):
+                v = v[1:-1].replace('" "', "")
+            answers.append(v)
+        return answers, data.get("Status")
+    return [], None
+
+
+def dig(name: str, rtype: str = "TXT") -> list[str]:
+    """One DNS lookup, however this machine can manage it."""
+    vals = _dig_binary(name, rtype)
+    if vals is not None:
+        return vals
+    return _doh(name, rtype)[0]
 
 
 def _real_key(values: list[str]) -> str | None:
@@ -86,12 +135,17 @@ def resolves(domain: str) -> bool:
     domain nobody has registered, which sends someone hunting through a DNS panel for a zone
     that does not exist.
     """
-    try:
-        out = subprocess.run(["dig", "+noall", "+comment", domain, "SOA"],
-                             capture_output=True, text=True, timeout=20).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return True  # cannot tell; assume it exists rather than blocking on a flaky resolver
-    return "NXDOMAIN" not in out
+    if not FORCE_DOH and shutil.which("dig"):
+        try:
+            out = subprocess.run(["dig", "+noall", "+comment", domain, "SOA"],
+                                 capture_output=True, text=True, timeout=20).stdout
+            return "NXDOMAIN" not in out
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    _, status = _doh(domain, "SOA")
+    # Status 3 is NXDOMAIN. A resolver we could not reach at all returns None, and an
+    # unreachable resolver is not evidence the domain is missing.
+    return status != 3
 
 
 def audit(domain: str, extra_selector: str | None = None) -> dict:
@@ -206,6 +260,22 @@ def main() -> None:
     args = ap.parse_args()
 
     r = audit(args.domain, args.selector)
+
+    # A machine that cannot do DNS lookups at all used to produce a perfectly normal-looking
+    # report saying every record was MISSING, which reads as a badly configured domain and is
+    # the most misleading output this script could possibly give. If no resolver ever
+    # answered, say THAT instead.
+    if not RESOLVER_OK["answered"]:
+        sys.exit(
+            f"could not look up {args.domain} at all - no DNS resolver answered.\n"
+            "This is a problem with this machine, not with the domain, and nothing below "
+            "would have been true.\n"
+            "  - `dig` is not installed (normal on Windows) and the DNS-over-HTTPS fallback "
+            "could not be reached either.\n"
+            "  - Check the network, a proxy, or a firewall blocking cloudflare-dns.com and "
+            "dns.google."
+        )
+
     if args.json:
         print(json.dumps(r, indent=2))
         return
