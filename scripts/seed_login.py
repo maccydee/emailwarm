@@ -111,7 +111,10 @@ def _holding_profile() -> list[str]:
     if IS_WINDOWS:
         # PowerShell rather than wmic: wmic is deprecated and is absent from recent Windows
         # 11 builds, so a wmic call returns nothing and every lock looks stale.
-        profile = str(PROFILE).replace("'", "''")
+        # -like treats [ and ] as wildcard syntax, and ' ends the string, so all three are
+        # escaped rather than trusting the path to be tidy.
+        profile = (str(PROFILE).replace("'", "''")
+                   .replace("[", "`[").replace("]", "`]"))
         script = ("Get-CimInstance Win32_Process | "
                   f"Where-Object {{ $_.CommandLine -like '*user-data-dir={profile}*' }} | "
                   "ForEach-Object {{ $_.ProcessId }}").replace("{{", "{").replace("}}", "}")

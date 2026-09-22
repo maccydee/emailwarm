@@ -326,8 +326,13 @@ def send_outlook(ctx, args) -> dict:
 
 
 
-AOL_MAIL = "https://mail.aol.com/"
-AOL_SENT = "https://mail.aol.com/d/folders/2"
+# AOL and Yahoo run the same client, so they share this driver - but they are different
+# mailboxes on different hosts, and hardcoding AOL's URL meant "--provider yahoo" signed into
+# AOL and tried to send from there. The host has to follow the provider.
+YAHOO_STACK_URLS = {
+    "aol": ("https://mail.aol.com/", "https://mail.aol.com/d/folders/2"),
+    "yahoo": ("https://mail.yahoo.com/", "https://mail.yahoo.com/d/folders/2"),
+}
 
 
 def send_aol(ctx, args) -> dict:
@@ -337,10 +342,11 @@ def send_aol(ctx, args) -> dict:
     Kinder than Outlook: To and Subject are real inputs, so their values can be read back
     directly rather than inferred from a chip.
     """
+    mail_url, sent_url = YAHOO_STACK_URLS.get(args.provider, YAHOO_STACK_URLS["aol"])
     info: dict = {"to": args.to, "subject": args.subject, "dry_run": args.dry_run,
-                  "provider": args.provider}
+                  "provider": args.provider, "mailbox_url": mail_url}
     page = ctx.new_page()
-    page.goto(AOL_MAIL, wait_until="domcontentloaded", timeout=60000)
+    page.goto(mail_url, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(11000)
 
     low = page.url.lower()
@@ -433,7 +439,7 @@ def send_aol(ctx, args) -> dict:
     # lands correctly; a sidebar click is kept only as a fallback.
     found, check = False, ctx.new_page()
     try:
-        check.goto(AOL_SENT, wait_until="domcontentloaded", timeout=60000)
+        check.goto(sent_url, wait_until="domcontentloaded", timeout=60000)
         for _ in range(6):
             check.wait_for_timeout(3500)
             if args.subject[:34] in check.inner_text("body"):
