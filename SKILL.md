@@ -262,9 +262,10 @@ claiming a send that did not happen, or a placement recorded from the wrong fold
 the placement record is built from those entries, and a wrong one is invisible until the
 warm-up ends on a false result.
 
-**If a provider has no driver in `scripts/`, the model has to drive the browser itself.**
-That is a different job - reading a changed DOM, deciding what a dialog means - and it wants
-sonnet at minimum. The honest fix is to write the driver rather than to lean on the model.
+**If a provider has no driver in `scripts/`, build one rather than leaning on the model to
+click through the mailbox every run.** Writing it takes one session and then every later run
+is deterministic. The procedure below produced the Outlook and AOL drivers, each in well under
+an hour, including the mistakes.
 
 Name the model explicitly in the scheduled job, since whatever the default is today will
 change under you:
@@ -273,6 +274,37 @@ change under you:
 claude -p "/emailwarm run the daily cadence" --model claude-sonnet-5 \
   --output-format json --dangerously-skip-permissions
 ```
+
+## Adding a driver for a provider that has none
+
+Do this against the live mailbox, never from memory. Every guess made from memory in these
+drivers was wrong: the Outlook compose control is "New email" and not "New mail", and a
+contains-match on "From" hit the message list's "Sort message list by From" button.
+
+1. **Open the signed-in mailbox and dump what is there.** List buttons and their aria-labels,
+   then click compose and list every input, textarea and contenteditable with an aria-label
+   or placeholder. That gives the real selectors in two passes.
+2. **Copy the shape of `send_outlook` or `send_aol`.** Same order every time: confirm the URL
+   is the mailbox, confirm the account is the one asked for, open compose, fill, verify, send,
+   confirm in Sent.
+3. **Expect these four, because every client has some of them.**
+   - The recipient becomes a chip and the input clears. Outlook then shows only the contact
+     NAME and keeps the address nowhere in the DOM; AOL keeps the real address in the row
+     around the field. Check which, and if the address is gone, verify it from the Sent item
+     instead.
+   - A suggestion list or an interstitial covers the next field. Escape closes it; filling
+     rather than clicking sidesteps the rest.
+   - Closing popups by a generic "anything labelled Close" will close the compose window.
+     Target the interstitial's own control only.
+   - Reaching Sent by clicking the sidebar is unreliable. AOL exposes no element whose text
+     is "Sent"; the folder URL works. Getting this wrong reports a sent message as a failure,
+     which is worse than not checking at all.
+4. **Prove it in three runs.** `--dry-run` composes and verifies without sending. Then one
+   real send to a mailbox the user controls, which must come back `"sent": true` with the
+   subject found in Sent. Then a deliberately wrong `--from-address`, which must refuse.
+5. **Register it in `DRIVERS`** and say in the code whether it was tested against a live
+   mailbox. Yahoo shares AOL's client and reuses that driver, and the code says it is
+   untested, because a reader deserves to know which claims were checked.
 
 ## Step 5 - Run the cadence
 
